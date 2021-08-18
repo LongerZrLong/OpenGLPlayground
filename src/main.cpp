@@ -7,13 +7,36 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Shader.h"
+#include "Camera.h"
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void processInput(GLFWwindow *window);
+
+// settings
+int SCR_WIDTH = 1440;
+int SCR_HEIGHT = 900;
+
+// camera
+Camera camera(glm::vec3(0.0, 0.0, 10.0));
+float lastX;
+float lastY;
+float zNear = 0.01f;
+float zFar = 1000.0f;
+
+glm::mat4 projectionMatrix;
+
+// timing
+float deltaTime = 0.0f;	// time between current frame and last frame
+float lastFrame = 0.0f;
 
 int main()
 {
     if (!glfwInit())
         return -1;
 
-    GLFWwindow *window = glfwCreateWindow(1440, 900, "OpenGLPlayground", nullptr, nullptr);
+    GLFWwindow *window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "OpenGLPlayground", nullptr, nullptr);
     if (!window)
     {
         glfwTerminate();
@@ -21,6 +44,9 @@ int main()
     }
 
     glfwMakeContextCurrent(window);
+    glfwSetWindowSizeCallback(window, framebuffer_size_callback);
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetScrollCallback(window, scroll_callback);
 
     if (!gladLoadGLLoader((GLADloadproc) glfwGetProcAddress)) {
         std::cout << "Failed to initialize OpenGL context" << std::endl;
@@ -67,28 +93,27 @@ int main()
 
     Shader shader("../assets/shaders/FlatColor.glsl");
 
+    int width, height;
+    glfwGetWindowSize(window, &width, &height);
+    projectionMatrix = glm::perspective(glm::radians(camera.Zoom), (float)width / (float)height, zNear, zFar);
+
     glm::mat4 modelMatrix = glm::mat4(1.0f);
-    glm::mat4 viewMatrix;
-    glm::mat4 projectionMatrix = glm::perspective(glm::radians(45.0f), (float)1440 / (float)900, 0.01f, 1000.0f);
-
-    shader.Bind();
-    shader.SetMat4("u_ModelMatrix", modelMatrix);
-    shader.SetMat4("u_ProjectionMatrix", projectionMatrix);
-
-    glm::vec3 position = glm::vec3(0.0, 0.0, 10);
-    glm::vec3 center = glm::vec3(0.0, 0.0, 0.0);
-    glm::vec3 up = glm::vec3(0.0, 1.0, 0.0);
 
     while (!glfwWindowShouldClose(window))
     {
+        float currentFrame = glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        processInput(window);
+
         glClearColor(0.1, 0.1, 0.1, 1.0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        position = glm::vec3(sin(glfwGetTime()), 0.0, cos(glfwGetTime())) * 10.f;
-
         shader.Bind();
-        viewMatrix = glm::lookAt(position, center, up);
-        shader.SetMat4("u_ViewMatrix", viewMatrix);
+        shader.SetMat4("u_ModelMatrix", modelMatrix);
+        shader.SetMat4("u_ViewMatrix", camera.GetViewMatrix());
+        shader.SetMat4("u_ProjectionMatrix", projectionMatrix);
 
         glBindVertexArray(vao);
         glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(unsigned int), GL_UNSIGNED_INT, nullptr);
@@ -99,4 +124,52 @@ int main()
 
     glfwTerminate();
     return 0;
+}
+
+// process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
+// ---------------------------------------------------------------------------------------------------------
+void processInput(GLFWwindow *window)
+{
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, true);
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_W) == GLFW_REPEAT)
+        camera.ProcessKeyboard(FORWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_W) == GLFW_REPEAT)
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_W) == GLFW_REPEAT)
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS || glfwGetKey(window, GLFW_KEY_W) == GLFW_REPEAT)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+    // make sure the viewport matches the new window dimensions; note that width and
+    // height will be significantly larger than specified on retina displays.
+    glViewport(0, 0, width, height);
+
+    SCR_WIDTH = width;
+    SCR_HEIGHT = height;
+    projectionMatrix = glm::perspective(glm::radians(camera.Zoom), (float)width / (float)height, 0.01f, 1000.0f);
+}
+
+void mouse_callback(GLFWwindow* window, double xpos, double ypos)
+{
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_REPEAT)
+    {
+        float xoffset = xpos - lastX;
+        float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+
+        camera.ProcessMouseMovement(xoffset, yoffset);
+    }
+
+    lastX = xpos;
+    lastY = ypos;
+}
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    camera.ProcessMouseScroll(yoffset);
+    projectionMatrix = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, zNear, zFar);
 }
